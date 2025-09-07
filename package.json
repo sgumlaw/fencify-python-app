@@ -10,29 +10,21 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test:unit": "vitest",
-    "test:e2e": "playwright test",
-    "build-only": "vite build",
     "type-check": "vue-tsc --build",
     "lint": "eslint . --fix",
-    "format": "prettier --write src/",
-    "start": "node dist/app.js"
+    "test:unit": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:live": "cross-env LIVE_API=1 playwright test"
   },
   "dependencies": {
-    "@types/express": "^5.0.3",
-    "dotenv": "^17.2.2",
-    "express": "^5.1.0",
     "pinia": "^3.0.3",
-    "ts-node": "^10.9.2",
     "vue": "^3.5.18",
     "vue-router": "^4.5.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.54.1",
     "@tsconfig/node22": "^22.0.2",
-    "@types/axios": "^0.9.36",
     "@types/jsdom": "^21.1.7",
-    "@types/multer": "^2.0.0",
     "@types/node": "^22.18.1",
     "@vitejs/plugin-vue": "^6.0.1",
     "@vitest/eslint-plugin": "^1.3.4",

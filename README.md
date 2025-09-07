@@ -62,3 +62,10 @@ npm run test:e2e -- --debug
 ```sh
 npm run lint
 ```
+
+## Environments
+
+Set the API base via Vite envs:
+
+- `.env` (local dev)
+- `.env.production`
