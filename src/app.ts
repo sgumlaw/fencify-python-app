@@ -5,6 +5,7 @@ import { S3Client } from '@aws-sdk/client-s3'
 import { httpClient } from './http/axios'
 import { putPublicObject } from './s3/upload'
 import path from 'path'
+import { fileURLToPath } from 'url'
 import crypto from 'crypto' // For generating unique filenames
 
 const app = express()
@@ -49,9 +50,10 @@ app.use(express.urlencoded({ extended: true, limit: '1mb' }))
 
 // Serve static Vue.js files in production
 if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(path.join(__dirname, '../dist')))
+  const baseDir = path.dirname(fileURLToPath(import.meta.url))
+  app.use(express.static(path.join(baseDir, '../dist')))
   app.get('/', (req, res) => {
-    res.sendFile(path.resolve(__dirname, '../dist', 'index.html'))
+    res.sendFile(path.resolve(baseDir, '../dist', 'index.html'))
   })
 }
 
