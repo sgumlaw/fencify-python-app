@@ -1,7 +1,6 @@
 import 'dotenv/config' // Load .env first
 import express from 'express'
 import multer from 'multer'
-import { PrismaClient } from '@prisma/client'
 import { S3Client } from '@aws-sdk/client-s3'
 import { httpClient } from './http/axios'
 import { putPublicObject } from './s3/upload'
@@ -10,7 +9,9 @@ import crypto from 'crypto' // For generating unique filenames
 
 const app = express()
 const port = process.env.PORT || 3000
-const prisma = new PrismaClient()
+
+// In-memory map to track uploaded blueprint URLs by ID (non-persistent)
+const blueprintStore = new Map<string, { url: string; name?: string }>()
 
 // Multer storage with limits
 const storage = multer.memoryStorage()
@@ -75,19 +76,11 @@ app.post('/api/blueprints/upload', upload.single('blueprint'), async (req, res) 
     // Upload to DigitalOcean Spaces with cache headers; rely on bucket policy for public-read
     await putPublicObject(s3Client, DO_SPACES_BUCKET, filePath, file.buffer, file.mimetype)
 
-    // Save blueprint metadata to PostgreSQL
-    const newBlueprint = await prisma.blueprint.create({
-      data: {
-        originalUrl: fileUrl,
-        name: originalFileName,
-      },
-    })
+    // Track in memory for subsequent processing requests
+    const id = crypto.randomUUID()
+    blueprintStore.set(id, { url: fileUrl, name: originalFileName })
 
-    res.status(201).json({
-      id: newBlueprint.id,
-      url: newBlueprint.originalUrl,
-      message: 'Blueprint uploaded successfully.',
-    })
+    res.status(201).json({ id, url: fileUrl, message: 'Blueprint uploaded successfully.' })
   } catch (error: unknown) {
     let errorMessage = 'Unknown error'
     if (error instanceof Error) {
@@ -100,34 +93,37 @@ app.post('/api/blueprints/upload', upload.single('blueprint'), async (req, res) 
 
 // POST /api/blueprints/process
 app.post('/api/blueprints/process', async (req, res) => {
-  const { blueprintId, prompt } = req.body
+  const { blueprintId, originalUrl, prompt } = req.body as {
+    blueprintId?: string
+    originalUrl?: string
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    prompt?: any
+  }
 
-  if (!blueprintId || !prompt) {
-    return res.status(400).json({ message: 'Blueprint ID and prompt are required.' })
+  if (!prompt) {
+    return res.status(400).json({ message: 'Prompt is required.' })
+  }
+
+  // Resolve source image URL either from request or in-memory store
+  let sourceUrl: string | undefined = originalUrl
+  if (!sourceUrl && blueprintId) {
+    sourceUrl = blueprintStore.get(blueprintId)?.url
+  }
+  if (!sourceUrl) {
+    return res
+      .status(400)
+      .json({ message: 'Provide originalUrl or a known blueprintId from a prior upload.' })
   }
 
   try {
-    const blueprint = await prisma.blueprint.findUnique({
-      where: { id: blueprintId },
-      select: { id: true, originalUrl: true },
-    })
-
-    if (!blueprint) {
-      return res.status(404).json({ message: 'Blueprint not found.' })
-    }
-
-    // Call Python Microservice for JSON-only result
     if (process.env.NODE_ENV !== 'production') {
-      console.log(
-        `Calling Python microservice for blueprint ${blueprint.originalUrl} with prompt:`,
-        prompt,
-      )
+      console.log(`Calling Python microservice for blueprint ${sourceUrl} with prompt:`, prompt)
     }
 
     const body = {
       mode: 'fence_extract',
       inputType: 'layout',
-      image_url: blueprint.originalUrl,
+      image_url: sourceUrl,
       progressive: true,
       want: { overlayPng: false, geometryJson: true },
       ...prompt,
@@ -136,9 +132,7 @@ app.post('/api/blueprints/process', async (req, res) => {
     const r = await httpClient.post<Record<string, unknown>>(
       `${PYTHON_MICROSERVICE_URL}/process_blueprint`,
       body,
-      {
-        responseType: 'json',
-      },
+      { responseType: 'json' },
     )
 
     if (!r.data || (r.data as Record<string, unknown>).error) {
@@ -152,11 +146,6 @@ app.post('/api/blueprints/process', async (req, res) => {
     const processedJsonUrl = DO_SPACES_PUBLIC_BASE
       ? `${DO_SPACES_PUBLIC_BASE}/${jsonKey}`
       : `${process.env.DO_SPACES_ENDPOINT}/${DO_SPACES_BUCKET}/${jsonKey}`
-
-    await prisma.blueprint.update({
-      where: { id: blueprintId },
-      data: { processedUrl: processedJsonUrl, lastProcessedAt: new Date() },
-    })
 
     return res
       .status(200)
@@ -176,13 +165,11 @@ app.listen(port, () => {
 })
 
 // Handle graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('SIGTERM received. Closing database connection.')
-  await prisma.$disconnect()
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received. Shutting down.')
   process.exit(0)
 })
-process.on('SIGINT', async () => {
-  console.log('SIGINT received. Closing database connection.')
-  await prisma.$disconnect()
+process.on('SIGINT', () => {
+  console.log('SIGINT received. Shutting down.')
   process.exit(0)
 })

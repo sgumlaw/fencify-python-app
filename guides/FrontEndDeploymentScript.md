@@ -54,10 +54,27 @@ sudo rsync -a --delete /var/www/blueprint/ "/var/backups/blueprint-$(date +%F-%H
 
 git status
 git add -A
-git commit -m "chore: apply performance improvements and docs"
+git commit -m "..."
 git pull --rebase origin master
 git push origin master
 
 # #If an old index lock is present
 
 rm -f .git/index.lock
+
+### Pull Changes on to Digital Ocean Droplet Server
+ssh root@104.248.11.221 -p 22022
+cd fencify-python-app
+git fetch --all --prune
+git checkout master
+git reset --hard origin/master
+git clean -fd
+
+npm ci --no-audit --no-fund
+
+npm run build
+
+systemctl daemon-reload
+systemctl restart fencify-python-app
+journalctl -u fencify-python-app -n 80 --no-pager
+curl -sS http://127.0.0.1:5100/health || true
