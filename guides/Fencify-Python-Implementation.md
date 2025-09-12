@@ -4,9 +4,9 @@
 
 - **Frontend**: Vue 3 + Vite, Pinia store, empty router. Entry at `src/main.ts`, root component `src/App.vue`.
 - **Backend API**: Express server in `src/app.ts`. Handles file upload and blueprint processing.
-- **Storage**: DigitalOcean Spaces (S3-compatible) for original and processed images.
+- **Storage**: DigitalOcean Spaces (S3-compatible) for original uploads and processed JSON results.
 - **Database**: PostgreSQL via Prisma. Model `Blueprint` persists file URLs and timestamps.
-- **External Service**: Python microservice called to process images.
+- **External Service**: Python microservice called to process blueprints and return JSON (no base64 image).
 
 #### Architecture
 
@@ -24,9 +24,11 @@
 #### Backend API (src/app.ts)
 
 - Loads env via `dotenv/config`.
-- Uploads use `multer.memoryStorage()` (no local disk writes).
-- DigitalOcean Spaces via `@aws-sdk/client-s3` with public-read ACL.
-- Errors are logged and returned with messages; Axios errors are type-narrowed using `axios.isAxiosError`.
+- Uploads use `multer.memoryStorage()` (no local disk writes) with file size and type limits.
+- DigitalOcean Spaces via `@aws-sdk/client-s3`; uploads performed with multipart helper `putPublicObject` (`src/s3/upload.ts`) and long-lived cache headers. Prefer bucket policy over per-object ACLs.
+- Public URLs are formed using `DO_SPACES_PUBLIC_BASE` when set (CDN or Spaces origin), falling back to `${DO_SPACES_ENDPOINT}/${DO_SPACES_BUCKET}`.
+- Shared axios client with HTTP keep-alive at `src/http/axios.ts` to reduce socket churn.
+- Errors are logged and returned with messages. In non-production, the outgoing Python payload is logged; production avoids logging large prompts.
 
 Endpoints
 
@@ -35,19 +37,23 @@ Endpoints
    - Response: `{ id: string, url: string, message: string }`
 
 2. `POST /api/blueprints/process`
-   - JSON body: `{ blueprintId: string, prompt: string }`
-   - Invokes Python at `${PYTHON_MICROSERVICE_URL}/process_blueprint`
-   - Python response expected: `{ processed_image_base64: string }`
-   - Response: `{ url: string | null, message: string }`
+   - JSON body: `{ blueprintId: string, prompt: object }`
+   - Invokes Python at `${PYTHON_MICROSERVICE_URL}/process_blueprint` using the keep-alive HTTP client
+   - Python returns JSON (no base64). The JSON is optionally versioned by uploading to Spaces as `application/json`.
+   - Response: `{ url: string | null, message: string }` (URL points to JSON)
 
 Python Microservice Contract
 
-- Request body sent from Node:
+- Request body sent from Node (expects JSON result, no base64):
 
 ```json
 {
+  "mode": "fence_extract",
+  "inputType": "layout",
   "image_url": "<public-URL-to-original-image>",
-  "prompt": "<instructions>"
+  "progressive": true,
+  "want": { "overlayPng": false, "geometryJson": true },
+  "prompt": {}
 }
 ```
 
@@ -55,15 +61,16 @@ Python Microservice Contract
 
 ```json
 {
-  "processed_image_base64": "<base64 PNG data>"
+  "geometry": {},
+  "meta": {}
 }
 ```
 
 #### Storage Layout (DigitalOcean Spaces)
 
 - Original uploads: `blueprints/original/<uuid>.<ext>`
-- Processed outputs: `blueprints/processed/<uuid>.png`
-- Public URLs are constructed as `${DO_SPACES_ENDPOINT}/${DO_SPACES_BUCKET}/${key}`.
+- Processed outputs (JSON): `blueprints/processed/<uuid>.json`
+- Public URLs are constructed as `${DO_SPACES_PUBLIC_BASE}/${key}` when set, otherwise `${DO_SPACES_ENDPOINT}/${DO_SPACES_BUCKET}/${key}`.
 
 #### Environment Variables (.env)
 
@@ -73,6 +80,7 @@ Python Microservice Contract
 - `DO_SPACES_KEY` / `DO_SPACES_SECRET` – DO Spaces credentials
 - `DO_SPACES_BUCKET` – bucket name
 - `PYTHON_MICROSERVICE_URL` – base URL of the Python service
+- `DO_SPACES_PUBLIC_BASE` – public base (CDN or Spaces origin) used to form object URLs
 
 Example
 
@@ -84,6 +92,7 @@ DO_SPACES_KEY=...
 DO_SPACES_SECRET=...
 DO_SPACES_BUCKET=fencify
 PYTHON_MICROSERVICE_URL=http://localhost:8000
+DO_SPACES_PUBLIC_BASE=https://your-bucket.nyc3.cdn.digitaloceanspaces.com
 ```
 
 #### Running Locally
@@ -105,9 +114,19 @@ Notes
 
 #### Frontend
 
-- Minimal starter: `src/App.vue` shows a placeholder message.
+- Upload input accepts PDFs and images: `<input type="file" accept=".pdf,image/*" />`.
+- Processed results may be JSON; when the URL ends in `.json`, the UI links to view the JSON, otherwise it renders an image.
 - Router: `src/router/index.ts` currently has no routes.
 - State: sample Pinia store at `src/stores/counter.ts`.
+
+#### Performance Improvements (2025-09)
+
+- JSON-only processing: removed base64 image shuttling between services.
+- Streaming-friendly S3 uploads via `@aws-sdk/lib-storage` with long-lived cache headers.
+- HTTP keep-alive axios client to minimize connection overhead.
+- Size limits and file type filters applied to uploads; small JSON body limits for API.
+- Public URL construction via `DO_SPACES_PUBLIC_BASE` (prefer bucket policy/CDN over per-object ACLs).
+- Graceful shutdown extended to handle `SIGINT` in addition to `SIGTERM`.
 
 #### Error Handling & Logging
 

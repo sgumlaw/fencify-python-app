@@ -61,8 +61,8 @@ async function onProcess() {
     <h1 class="text-2xl font-semibold">Fencify – Blueprint Processor</h1>
 
     <section class="space-y-3">
-      <label class="block font-medium">Upload blueprint (PNG/JPG/PDF image export)</label>
-      <input type="file" accept="image/*" @change="onUpload" />
+      <label class="block font-medium">Upload blueprint (PDF/PNG/JPG)</label>
+      <input type="file" accept=".pdf,image/*" @change="onUpload" />
       <p v-if="uploading" class="text-sm text-gray-500">Uploading…</p>
       <p v-if="originalUrl" class="text-sm text-green-600">Uploaded ✔</p>
     </section>
@@ -98,7 +98,14 @@ async function onProcess() {
 
         <div v-if="processedUrl">
           <h2 class="font-medium mb-2">Processed</h2>
-          <img :src="processedUrl!" alt="processed" class="border rounded w-full" />
+          <template v-if="/\.png$/i.test(processedUrl)">
+            <img :src="processedUrl!" alt="processed" class="border rounded w-full" />
+          </template>
+          <template v-else>
+            <a :href="processedUrl!" target="_blank" class="text-blue-600 underline"
+              >View processed JSON</a
+            >
+          </template>
         </div>
       </div>
     </section>

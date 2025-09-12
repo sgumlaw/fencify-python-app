@@ -49,3 +49,15 @@ sudo rsync -a --delete /var/www/blueprint/ "/var/backups/blueprint-$(date +%F-%H
 # sudo rsync -a --delete "/var/backups/blueprint-YYYY-MM-DD-HHMM/" /var/www/blueprint/
 
 # sudo nginx -t && sudo systemctl reload nginx
+
+### Push Changes to Github
+
+git status
+git add -A
+git commit -m "chore: apply performance improvements and docs"
+git pull --rebase origin master
+git push origin master
+
+# #If an old index lock is present
+
+rm -f .git/index.lock

@@ -34,3 +34,6 @@ playwright-report/
 
 /src/generated/prisma
 .env
+node_modules/
+dist/
+node_modules.bak.*/
