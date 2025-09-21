@@ -1,6 +1,7 @@
 import 'dotenv/config' // Load .env first
 import express from 'express'
 import multer from 'multer'
+import type { Request } from 'express'
 import { S3Client } from '@aws-sdk/client-s3'
 import { httpClient } from './http/axios'
 import { putPublicObject } from './s3/upload'
@@ -9,7 +10,7 @@ import { fileURLToPath } from 'url'
 import crypto from 'crypto' // For generating unique filenames
 
 const app = express()
-const port = process.env.PORT || 3000
+const port = Number(process.env.PORT) || 3000
 
 // In-memory map to track uploaded blueprint URLs by ID (non-persistent)
 const blueprintStore = new Map<string, { url: string; name?: string }>()
@@ -20,9 +21,9 @@ const upload = multer({
   storage: storage,
   limits: { fileSize: 25 * 1024 * 1024, files: 1, fieldSize: 1 * 1024 * 1024 },
   fileFilter: (
-    _req: any,
-    file: { mimetype: string },
-    cb: (arg0: Error | null, arg1: boolean) => void,
+    _req: Request,
+    file: Express.Multer.File,
+    cb: (error: Error | null, acceptFile: boolean) => void,
   ) => {
     const ok = /pdf|png|jpe?g/i.test(file.mimetype)
     cb(ok ? null : new Error('Unsupported file type'), ok)
@@ -98,8 +99,7 @@ app.post('/api/blueprints/process', async (req, res) => {
   const { blueprintId, originalUrl, prompt } = req.body as {
     blueprintId?: string
     originalUrl?: string
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    prompt?: any
+    prompt?: Record<string, unknown>
   }
 
   if (!prompt) {

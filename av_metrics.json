@@ -1,0 +1,49 @@
+{
+  "repo": "fencify-python-app",
+  "providers": [],
+  "transcription": {
+    "billable_unit": "minute",
+    "rounding": "ceil_60s",
+    "summary_call_per_job": false
+  },
+  "io_sizes": {
+    "avg_mb_per_min_input": 0,
+    "avg_mb_per_transcript": 0
+  },
+  "infra": {
+    "concurrency_max": 100,
+    "timeout_sec": 25
+  },
+  "sources": [
+    {
+      "path": "src/http/axios.ts",
+      "lines": "1-11",
+      "reason": "HTTP client timeout and maxSockets (infra limits)"
+    },
+    {
+      "path": "src/s3/upload.ts",
+      "lines": "1-26",
+      "reason": "S3 multipart uploader queueSize/partSize (throughput behavior)"
+    },
+    {
+      "path": "src/app.ts",
+      "lines": "1-48",
+      "reason": "Server and env config; no AV stack present"
+    },
+    {
+      "path": "src/app.ts",
+      "lines": "62-94",
+      "reason": "Upload endpoint; image files only (pdf/png/jpeg)"
+    },
+    {
+      "path": "src/app.ts",
+      "lines": "96-162",
+      "reason": "Processing endpoint calls Python microservice; not AV transcription"
+    },
+    {
+      "path": "guides/Fencify-Python-Implementation.md",
+      "lines": "1-29",
+      "reason": "Architecture guide confirms no AV pipeline/providers"
+    }
+  ]
+}

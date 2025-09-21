@@ -62,7 +62,8 @@ git push origin master
 
 rm -f .git/index.lock
 
-### Pull Changes on to Digital Ocean Droplet Server
+### Pull Changes to the Droplet and restart API
+
 ssh root@104.248.11.221 -p 22022
 cd fencify-python-app
 git fetch --all --prune
@@ -70,11 +71,17 @@ git checkout master
 git reset --hard origin/master
 git clean -fd
 
-npm ci --no-audit --no-fund
+# Install deps (include dev for server build), build UI
 
+env -u NODE_ENV npm ci --include=dev --no-audit --no-fund || npm install
 npm run build
+
+# Build server JS bundle (runs Node on dist/app.js)
+
+npx tsup src/app.ts --format esm --target node22 --out-dir dist
 
 systemctl daemon-reload
 systemctl restart fencify-python-app
 journalctl -u fencify-python-app -n 80 --no-pager
-curl -sS http://127.0.0.1:5100/health || true
+ss -tulpn | grep :3000 || true
+curl -I http://127.0.0.1:3000 || true

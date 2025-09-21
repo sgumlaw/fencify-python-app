@@ -5,21 +5,18 @@
 - **Frontend**: Vue 3 + Vite, Pinia store, empty router. Entry at `src/main.ts`, root component `src/App.vue`.
 - **Backend API**: Express server in `src/app.ts`. Handles file upload and blueprint processing.
 - **Storage**: DigitalOcean Spaces (S3-compatible) for original uploads and processed JSON results.
-- **Database**: PostgreSQL via Prisma. Model `Blueprint` persists file URLs and timestamps.
 - **External Service**: Python microservice called to process blueprints and return JSON (no base64 image).
 
 #### Architecture
 
 - **Frontend build** served by Vite during development. In production, `src/app.ts` can serve built assets from `dist/` when `NODE_ENV=production`.
 - **API** exposes two endpoints under `/api/blueprints`:
-  - `POST /upload` – upload a blueprint image; stores in DO Spaces; creates DB record.
-  - `POST /process` – calls Python service to transform the image; stores result in DO Spaces; updates DB record.
+  - `POST /upload` – upload a blueprint image; stores in DO Spaces; returns `{ id, url }` (id is in-memory only).
+  - `POST /process` – calls the processor to transform the image; uploads JSON result to DO Spaces; returns result URL. Accepts `originalUrl` directly or a prior `blueprintId`.
 
-#### Database (Prisma)
+#### Database
 
-- Schema: `prisma/schema.prisma`
-  - `Blueprint`: `id (uuid)`, `originalUrl`, `processedUrl?`, `name?`, `uploadedAt`, `lastProcessedAt?`.
-- Generated client located at `src/generated/prisma` (configured via `generator client` output).
+No database is used in this app. An in-memory map tracks `blueprintId -> originalUrl` for the current process lifetime only. The recommended production pattern is to pass `originalUrl` directly to the processing endpoint.
 
 #### Backend API (src/app.ts)
 
@@ -29,15 +26,16 @@
 - Public URLs are formed using `DO_SPACES_PUBLIC_BASE` when set (CDN or Spaces origin), falling back to `${DO_SPACES_ENDPOINT}/${DO_SPACES_BUCKET}`.
 - Shared axios client with HTTP keep-alive at `src/http/axios.ts` to reduce socket churn.
 - Errors are logged and returned with messages. In non-production, the outgoing Python payload is logged; production avoids logging large prompts.
+- `PORT` is coerced to a number to avoid bad values from `.env` (e.g., inline comments).
 
 Endpoints
 
 1. `POST /api/blueprints/upload`
    - Form-data field: `blueprint` (file)
-   - Response: `{ id: string, url: string, message: string }`
+   - Response: `{ id: string, url: string, message: string }` (id is ephemeral)
 
 2. `POST /api/blueprints/process`
-   - JSON body: `{ blueprintId: string, prompt: object }`
+   - JSON body: `{ originalUrl?: string, blueprintId?: string, prompt: object }`
    - Invokes Python at `${PYTHON_MICROSERVICE_URL}/process_blueprint` using the keep-alive HTTP client
    - Python returns JSON (no base64). The JSON is optionally versioned by uploading to Spaces as `application/json`.
    - Response: `{ url: string | null, message: string }` (URL points to JSON)
@@ -75,7 +73,6 @@ Python Microservice Contract
 #### Environment Variables (.env)
 
 - `PORT` – API port (default 3000)
-- `DATABASE_URL` – PostgreSQL connection for Prisma
 - `DO_SPACES_ENDPOINT` – e.g., `https://nyc3.digitaloceanspaces.com`
 - `DO_SPACES_KEY` / `DO_SPACES_SECRET` – DO Spaces credentials
 - `DO_SPACES_BUCKET` – bucket name
@@ -86,7 +83,6 @@ Example
 
 ```bash
 PORT=3000
-DATABASE_URL=postgresql://user:pass@host:5432/db
 DO_SPACES_ENDPOINT=https://nyc3.digitaloceanspaces.com
 DO_SPACES_KEY=...
 DO_SPACES_SECRET=...
@@ -99,13 +95,46 @@ DO_SPACES_PUBLIC_BASE=https://your-bucket.nyc3.cdn.digitaloceanspaces.com
 
 - Install: `npm install`
 - Frontend dev server: `npm run dev`
-- Backend API (TypeScript): `npx ts-node src/app.ts`
+- Backend API (TypeScript): `npx ts-node src/app.ts` (or compile with a bundler like `tsup` and run Node on the output)
 - Type-check: `npm run type-check`
 - Lint: `npm run lint`
 
 Notes
 
 - In production, build the frontend (`vite build`) and run the backend with a Node-compatible build of `src/app.ts` (e.g., via `tsc` or a bundler) if not using ts-node in production.
+
+#### Deployment (systemd)
+
+- Systemd unit (paths may vary):
+
+```ini
+[Unit]
+Description=Fencify Node API
+After=network.target
+
+[Service]
+WorkingDirectory=/root/fencify-python-app
+User=root
+Environment=NODE_ENV=production
+EnvironmentFile=/root/fencify-python-app/.env.production
+ExecStart=/root/.nvm/versions/node/v22.12.0/bin/node dist/app.js
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+- Build server bundle and restart:
+
+```bash
+cd /root/fencify-python-app
+env -u NODE_ENV npm ci --include=dev --no-audit --no-fund
+npx tsup src/app.ts --format esm --target node22 --out-dir dist
+sudo systemctl daemon-reload
+sudo systemctl restart fencify-python-app
+sudo systemctl status fencify-python-app
+```
 
 #### Testing
 
@@ -137,6 +166,4 @@ Notes
 
 - Backend API: `src/app.ts`
 - Frontend app: `src/` (entry `main.ts`, components in `App.vue`)
-- Prisma schema: `prisma/schema.prisma`
-- Generated Prisma client: `src/generated/prisma`
 - E2E tests: `e2e/`
