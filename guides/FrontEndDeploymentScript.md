@@ -1,4 +1,4 @@
-## Build from ~/fencify-python-app and publish to /var/www/blueprint.
+## Build from ~/fencify-layout-gateway and publish to /var/www/blueprint.
 
 # Create the deploy helper
 
@@ -6,7 +6,7 @@ sudo tee /usr/local/bin/deploy-blueprint-ui >/dev/null <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_DIR="/root/fencify-python-app"
+APP_DIR="/root/fencify-layout-gateway"
 WEB_ROOT="/var/www/blueprint"
 
 echo "[1/4] Build UI"
@@ -58,30 +58,40 @@ git commit -m "..."
 git pull --rebase origin master
 git push origin master
 
-# #If an old index lock is present
+# If an old index lock is present
 
 rm -f .git/index.lock
 
 ### Pull Changes to the Droplet and restart API
 
 ssh root@104.248.11.221 -p 22022
-cd fencify-python-app
+cd /root/fencify-layout-gateway
 git fetch --all --prune
 git checkout master
 git reset --hard origin/master
 git clean -fd
 
-# Install deps (include dev for server build), build UI
+# Ensure local devDeps present for server build (typescript, tsup)
 
-env -u NODE_ENV npm ci --include=dev --no-audit --no-fund || npm install
+env -u NODE_ENV npm ci --include=dev --no-audit --no-fund || npm install --include=dev
+
+# Build UI
+
 npm run build
 
-# Build server JS bundle (runs Node on dist/app.js)
+# Build server JS bundle (use LOCAL tsup so it finds local typescript)
 
-npx tsup src/app.ts --format esm --target node22 --out-dir dist
+npx --no-install tsup src/app.ts --format esm --target node22 --out-dir dist
 
 systemctl daemon-reload
-systemctl restart fencify-python-app
-journalctl -u fencify-python-app -n 80 --no-pager
+systemctl restart fencify-layout-gateway
+journalctl -u fencify-layout-gateway -n 80 --no-pager
 ss -tulpn | grep :3000 || true
 curl -I http://127.0.0.1:3000 || true
+
+#### Troubleshooting: "Cannot find module 'typescript'"
+
+# Install local dev deps and re-run tsup without fetching a new copy
+
+env -u NODE_ENV npm i -D typescript tsup
+npx --no-install tsup src/app.ts --format esm --target node22 --out-dir dist

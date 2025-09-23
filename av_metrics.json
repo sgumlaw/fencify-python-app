@@ -1,5 +1,5 @@
 {
-  "repo": "fencify-python-app",
+  "repo": "fencify-layout-gateway",
   "providers": [],
   "transcription": {
     "billable_unit": "minute",
@@ -41,7 +41,7 @@
       "reason": "Processing endpoint calls Python microservice; not AV transcription"
     },
     {
-      "path": "guides/Fencify-Python-Implementation.md",
+      "path": "guides/Fencify-Layout-Gateway-Implementation.md",
       "lines": "1-29",
       "reason": "Architecture guide confirms no AV pipeline/providers"
     }

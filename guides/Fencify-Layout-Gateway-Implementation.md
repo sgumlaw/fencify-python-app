@@ -1,4 +1,4 @@
-### Fencify Application – Implementation Guide
+### Fencify Layout Gateway – Implementation Guide
 
 #### Overview
 
@@ -109,15 +109,17 @@ Notes
 
 ```ini
 [Unit]
-Description=Fencify Node API
+Description=Fencify Layout Gateway API
 After=network.target
 
 [Service]
-WorkingDirectory=/root/fencify-python-app
+WorkingDirectory=/root/fencify-layout-gateway
 User=root
 Environment=NODE_ENV=production
-EnvironmentFile=/root/fencify-python-app/.env.production
-ExecStart=/root/.nvm/versions/node/v22.12.0/bin/node dist/app.js
+# Read environment variables from file (PORT, DO_SPACES_*, PYTHON_MICROSERVICE_URL, etc.)
+EnvironmentFile=-/root/fencify-layout-gateway/.env.production
+# Use absolute Node path or set PATH and use /usr/bin/env node
+ExecStart=/root/.nvm/versions/node/v22.12.0/bin/node /root/fencify-layout-gateway/dist/app.js
 Restart=always
 RestartSec=10
 
@@ -128,12 +130,38 @@ WantedBy=multi-user.target
 - Build server bundle and restart:
 
 ```bash
-cd /root/fencify-python-app
-env -u NODE_ENV npm ci --include=dev --no-audit --no-fund
-npx tsup src/app.ts --format esm --target node22 --out-dir dist
+cd /root/fencify-layout-gateway
+env -u NODE_ENV npm ci --include=dev --no-audit --no-fund || npm install --include=dev
+# Build UI
+npm run build
+# Build server with LOCAL tsup so it can resolve local typescript
+npx --no-install tsup src/app.ts --format esm --target node22 --out-dir dist
 sudo systemctl daemon-reload
-sudo systemctl restart fencify-python-app
-sudo systemctl status fencify-python-app
+sudo systemctl restart fencify-layout-gateway
+sudo systemctl status fencify-layout-gateway
+```
+
+Troubleshooting
+
+- Cannot find module 'typescript' when running tsup
+
+```bash
+env -u NODE_ENV npm i -D typescript tsup
+npx --no-install tsup src/app.ts --format esm --target node22 --out-dir dist
+```
+
+- Systemd warning: Ignoring invalid environment assignment
+
+Ensure the unit uses only `Environment=` KEY=VALUE lines and an `EnvironmentFile` reference. Do not embed shell commands in `Environment=`. Put values in `/root/fencify-layout-gateway/.env.production` instead, e.g.:
+
+```bash
+PORT=3000
+DO_SPACES_ENDPOINT=...
+DO_SPACES_KEY=...
+DO_SPACES_SECRET=...
+DO_SPACES_BUCKET=...
+DO_SPACES_PUBLIC_BASE=...
+PYTHON_MICROSERVICE_URL=...
 ```
 
 #### Testing

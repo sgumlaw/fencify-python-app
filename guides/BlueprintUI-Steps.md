@@ -7,22 +7,22 @@ Nginx site: /etc/nginx/sites-available/blueprint.fencify.io → enabled
 
 TLS via Certbot already installed and working
 
-Build source: ~/fencify-python-app (Vite app)
+Build source: ~/fencify-layout-gateway (Vite app)
 
 0. (Optional) Update code
-   cd ~/fencify-python-app
+   cd ~/fencify-layout-gateway
    git pull
 
 1. Build the frontend
 
 (Use the newer Node you installed with nvm use 22 if needed.)
 
-cd ~/fencify-python-app
+cd ~/fencify-layout-gateway
 npm ci || npm install
 npm run build
 
 2. Deploy build to web root
-   sudo rsync -a --delete ~/fencify-python-app/dist/ /var/www/blueprint/
+   sudo rsync -a --delete ~/fencify-layout-gateway/dist/ /var/www/blueprint/
    sudo chown -R www-data:www-data /var/www/blueprint
    sudo find /var/www/blueprint -type d -exec chmod 755 {} \;
    sudo find /var/www/blueprint -type f -exec chmod 644 {} \;
@@ -59,7 +59,7 @@ Create /usr/local/bin/deploy-blueprint-ui:
 sudo tee /usr/local/bin/deploy-blueprint-ui >/dev/null <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
-cd /root/fencify-python-app
+cd /root/fencify-layout-gateway
 npm run build
 rsync -a --delete dist/ /var/www/blueprint/
 chown -R www-data:www-data /var/www/blueprint
